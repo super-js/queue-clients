@@ -4,7 +4,7 @@ import {MqttQueueClient} from "./mqtt";
 
 describe("MqttQueueClient", () => {
 
-    const getClient = () => MqttQueueClient.create({
+    const getClient = () => MqttQueueClient.create('test_client',{
         host: 'localhost',
         port: 1884,
         waitForConnection: true,
@@ -41,5 +41,8 @@ describe("MqttQueueClient", () => {
         await mqttClient.close()
 
         expect(published && topic.noOfPublishedMessages === 1).toBeTruthy();
+    })
+
+    it('should subscribe to a topic', async () => {
     })
 })

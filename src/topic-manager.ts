@@ -6,6 +6,8 @@ export interface Topics {
     [topicName: string]: Topic;
 }
 
+export type DefaultTopics = { [topicPath: string]: IAddTopicOptions };
+
 export interface IAddTopicOptions {
     subscribe?: boolean;
     subscribeOptions?: IClientSubscribeOptions;
@@ -17,9 +19,11 @@ export interface ITopicManagerConstructor {
     getSubscriber: () => TopicSubscriber;
     getUnsubscriber: () => (TopicUnsubscriber | null);
     queueClient: QueueClient;
+    topics?: DefaultTopics;
 }
 
 export class TopicManager {
+
     private _topics: Topics = {};
 
     private readonly _getPublisher: () => TopicPublisher;
@@ -27,11 +31,38 @@ export class TopicManager {
     private readonly _getUnsubscriber: () => (TopicUnsubscriber | null);
     private readonly _queueClient: QueueClient;
 
+    private _addDefaultTopicsTimeout: NodeJS.Timeout;
+
     constructor(options: ITopicManagerConstructor) {
         this._getPublisher = options.getPublisher;
         this._getSubscriber = options.getSubscriber;
         this._getUnsubscriber = options.getUnsubscriber;
         this._queueClient = options.queueClient;
+
+        if(options.topics && Object.keys(options.topics).length > 0) {
+            this._addDefaultTopics(options.topics);
+        }
+    }
+
+    private _addDefaultTopics(topics: DefaultTopics) {
+
+        const addTopics = async () => {
+            if(this.isConnected) {
+                clearTimeout(this._addDefaultTopicsTimeout);
+
+                await Promise.all(
+                    Object
+                        .keys(topics)
+                        .map(topicPath => this.addTopic(topicPath, topics[topicPath]))
+                )
+
+            } else {
+                this._addDefaultTopicsTimeout = setTimeout(() => addTopics(), 10)
+            }
+        }
+
+        addTopics();
+
     }
 
     public async addTopic(topicPath: string, options?: IAddTopicOptions): Promise<Topic> {
@@ -68,5 +99,9 @@ export class TopicManager {
     public onMessage(topicPath: string, message: Buffer) {
         const topic = this._topics[topicPath];
         if(topic) topic.emitMessage(message);
+    }
+
+    get isConnected(): boolean {
+        return this._queueClient.isConnected;
     }
 }

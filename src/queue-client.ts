@@ -1,7 +1,6 @@
-import type {IClientPublishOptions, IClientSubscribeOptions} from "mqtt";
 import process from "process";
-import {Topic, TopicMessage, TopicPublisher, TopicSubscriber, TopicUnsubscriber} from "./topic";
-import {TopicManager} from "./topic-manager";
+import {TopicPublisher, TopicSubscriber, TopicUnsubscriber, IPublishResponse} from "./topic";
+import {TopicManager, DefaultTopics} from "./topic-manager";
 
 export interface ICreateQueueClient {
     waitForConnection?: boolean;
@@ -10,25 +9,7 @@ export interface ICreateQueueClient {
     port: number;
     user?: string;
     password?: string;
-}
-
-export interface IPublishResponse {
-    published: boolean;
-}
-
-export interface IPublishRequest {
-    topicName: string;
-    message: string | Buffer;
-    options?: IClientPublishOptions
-}
-
-export interface IAddTopicOptions {
-    subscribe?: boolean;
-    subscribeOptions?: IClientSubscribeOptions;
-}
-
-export interface Topics {
-    [topicName: string]: Topic;
+    topics?: DefaultTopics;
 }
 
 export class QueueClientConnectionError extends Error {
@@ -48,6 +29,8 @@ export abstract class QueueClient {
     protected abstract subscriber: TopicSubscriber;
     protected abstract unsubscriber?: TopicUnsubscriber;
 
+    protected _lastError?: Error;
+
     protected constructor(options: ICreateQueueClient) {
         this.host = options.host;
         this.port = options.port;
@@ -56,13 +39,14 @@ export abstract class QueueClient {
             queueClient: this,
             getSubscriber: () => this.subscriber,
             getPublisher: () => this.publisher,
-            getUnsubscriber: () => this.unsubscriber
+            getUnsubscriber: () => this.unsubscriber,
+            topics: options.topics
         })
 
         process.on('exit', () => this.close())
     }
 
-    static async create(options: ICreateQueueClient): Promise<QueueClient> {
+    static async create(clientName: string, options: ICreateQueueClient): Promise<QueueClient> {
         return null;
     }
 
@@ -71,6 +55,10 @@ export abstract class QueueClient {
 
     public get topicManager(): TopicManager {
         return this._topicManager;
+    }
+
+    public get lastErrorMessage(): string {
+        return this._lastError ? this._lastError.message : null;
     }
 
     protected onMessage(topicPath: string, message: Buffer) {

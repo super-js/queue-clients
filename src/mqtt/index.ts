@@ -1,15 +1,20 @@
-import {
-    ICreateQueueClient,
-    IPublishResponse,
-    QueueClient
-} from "../queue-client";
+import {ICreateQueueClient, QueueClient} from "../queue-client";
 import * as mqtt from "mqtt";
-import {ISubscribeResponse, ITopicPublishRequest, ITopicSubscribeRequest, IUnsubscribeResponse} from "../topic";
+import {
+    IPublishResponse,
+    ISubscribeResponse,
+    ITopicPublishRequest,
+    ITopicSubscribeRequest,
+    IUnsubscribeResponse
+} from "../topic";
 
 export interface ICreateMqttQueueClient extends ICreateQueueClient {
     protocol?: 'wss' | 'ws' | 'mqtt' | 'mqtts' | 'tcp' | 'ssl' | 'wx' | 'wxs'
 }
 
+export interface IMqttQueueClientConstructor extends ICreateMqttQueueClient {
+    clientName: string;
+}
 
 export class MqttQueueClient extends QueueClient {
 
@@ -58,7 +63,7 @@ export class MqttQueueClient extends QueueClient {
         })
     }
 
-    constructor(options: ICreateMqttQueueClient) {
+    constructor(options: IMqttQueueClientConstructor) {
         super(options);
 
         this._mqttClient = mqtt.connect({
@@ -67,16 +72,19 @@ export class MqttQueueClient extends QueueClient {
             protocol: options.protocol || 'mqtt',
             username: options.user,
             password: options.password,
-            connectTimeout: 2
+            clientId: options.clientName
         });
 
         this._mqttClient.on('message', (topicPath, message) => {
             this.onMessage(topicPath, message);
-        });
+        }).on('error', error => this._lastError = error)
     }
 
-    static async create(options: ICreateMqttQueueClient) {
-        const mqttQueueClient = new MqttQueueClient(options);
+    static async create(clientName, options: ICreateMqttQueueClient) {
+        const mqttQueueClient = new MqttQueueClient({
+            ...options,
+            clientName
+        });
 
         if(options.waitForConnection) await mqttQueueClient.waitForConnection(options.waitForConnectionTimeout);
 
@@ -92,6 +100,6 @@ export class MqttQueueClient extends QueueClient {
     }
 
     get isConnected(): boolean {
-        return this._mqttClient.connected;
+        return this._mqttClient && this._mqttClient.connected;
     }
 }
