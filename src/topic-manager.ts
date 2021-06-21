@@ -44,28 +44,34 @@ export class TopicManager {
         }
     }
 
-    private _addDefaultTopics(topics: DefaultTopics) {
+    private async _addDefaultTopics(topics: DefaultTopics) {
 
-        const addTopics = async () => {
-            if(this.isConnected) {
-                clearTimeout(this._addDefaultTopicsTimeout);
+        await Promise.all(
+            Object
+                .keys(topics)
+                .map(topicPath => this.addTopic(topicPath, topics[topicPath]))
+        )
 
-                await Promise.all(
-                    Object
-                        .keys(topics)
-                        .map(topicPath => this.addTopic(topicPath, topics[topicPath]))
-                )
-
-            } else {
-                this._addDefaultTopicsTimeout = setTimeout(() => addTopics(), 10)
-            }
-        }
-
-        addTopics();
+        // const addTopics = async () => {
+        //     if(this.isConnected) {
+        //         clearTimeout(this._addDefaultTopicsTimeout);
+        //
+        //         await Promise.all(
+        //             Object
+        //                 .keys(topics)
+        //                 .map(topicPath => this.addTopic(topicPath, topics[topicPath]))
+        //         )
+        //
+        //     } else {
+        //         this._addDefaultTopicsTimeout = setTimeout(() => addTopics(), 10)
+        //     }
+        // }
+        //
+        // addTopics();
 
     }
 
-    public async addTopic(topicPath: string, options?: IAddTopicOptions): Promise<Topic> {
+    public addTopic(topicPath: string, options?: IAddTopicOptions): Topic {
         const topic = new Topic({
             publisher: this._getPublisher(),
             subscriber: this._getSubscriber(),
@@ -75,9 +81,7 @@ export class TopicManager {
             topicPath
         });
 
-        if(options?.subscribe) {
-            await topic.subscribe(options?.subscribeOptions);
-        }
+        if(options?.subscribe) topic.subscribe(options?.subscribeOptions);
 
         this._topics[topicPath] = topic;
 

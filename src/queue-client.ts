@@ -1,6 +1,6 @@
 import process from "process";
 import {TopicPublisher, TopicSubscriber, TopicUnsubscriber, IPublishResponse} from "./topic";
-import {TopicManager, DefaultTopics} from "./topic-manager";
+import {TopicManager, DefaultTopics, Topics} from "./topic-manager";
 
 export interface ICreateQueueClient {
     waitForConnection?: boolean;
@@ -55,6 +55,10 @@ export abstract class QueueClient {
 
     public get topicManager(): TopicManager {
         return this._topicManager;
+    }
+
+    public get topics(): Topics {
+        return this._topicManager.topics;
     }
 
     public get lastErrorMessage(): string {

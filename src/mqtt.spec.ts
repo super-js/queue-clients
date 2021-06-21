@@ -6,9 +6,9 @@ describe("MqttQueueClient", () => {
 
     const getClient = () => MqttQueueClient.create('test_client',{
         host: 'localhost',
-        port: 1884,
-        waitForConnection: true,
-        waitForConnectionTimeout: 10,
+        port: 1883,
+        // waitForConnection: true,
+        // waitForConnectionTimeout: 10,
         user: 'user',
         password: 'password'
     })
@@ -34,9 +34,14 @@ describe("MqttQueueClient", () => {
             subscribe: true
         });
 
+        topic.on('jsonMessage', console.log);
+        topic.on('message', console.log);
+        topic.on('stringMessage', console.log);
+
         const {published} = await topic.publish({
             message: JSON.stringify({test: [213, 43243, 342]})
-        })
+        });
+
 
         await mqttClient.close()
 

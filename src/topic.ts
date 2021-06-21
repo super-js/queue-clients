@@ -11,7 +11,8 @@ export type TopicUnsubscriber = (topicPath: string) => Promise<IUnsubscribeRespo
 export interface ITopicPublishRequest {
     topicPath: string;
     message: TopicMessage;
-    options?: IClientPublishOptions
+    options?: IClientPublishOptions;
+    timeoutInSeconds?: number;
 }
 
 export interface ITopicSubscribeRequest {
@@ -45,7 +46,10 @@ export interface Topic {
     on(event: 'message', listener: (message: Buffer) => void): this;
     on(event: 'stringMessage', listener: (message: string) => void): this;
     on(event: 'jsonMessage', listener: (message: Object) => void): this;
+    on(event: 'onSubscriptionResponse', listener: (succeeded: string, failedMessage?: string) => void);
 }
+
+export class TopicPublishError extends Error {}
 
 export class Topic extends EventEmitter {
 
@@ -57,10 +61,15 @@ export class Topic extends EventEmitter {
     private readonly _queueClient: QueueClient;
     private readonly _encoding: BufferEncoding;
 
+    private _isSubscribing: boolean = false;
     private _isSubscribed: boolean = false;
+    private _subscriptionFailedReason: string;
 
     private _noOfReceivedMessages: number = 0;
     private _noOfPublishedMessages: number = 0;
+
+    private _trySubscribeTimeout: NodeJS.Timeout = null;
+    private _tryUnsubscribeTimeout: NodeJS.Timeout = null;
 
     constructor(options: ITopicConstructor) {
         super();
@@ -75,57 +84,113 @@ export class Topic extends EventEmitter {
 
 
     public async publish(request: Omit<ITopicPublishRequest, 'topicPath'>): Promise<IPublishResponse> {
+        return new Promise<IPublishResponse>((resolve, reject) => {
 
-        if(!this.isConnected) {
-            throw new QueueClientConnectionError('QueueClient/Topic not connected');
-        }
+            const timeoutInSeconds = request.timeoutInSeconds || 5;
+            let noOfPublishRetries = 0;
 
-        const publishResponse = await this._publisher({
-            ...request,
-            topicPath: this._topicPath
-        });
+            const _tryPublish = async () => {
 
-        if(publishResponse.published) this._noOfPublishedMessages++;
+                if(this.isConnected) {
+                    try {
 
-        return publishResponse;
+                        const publishResponse = await this._publisher({
+                            ...request,
+                            topicPath: this._topicPath
+                        });
+
+                        if(publishResponse.published) this._noOfPublishedMessages++;
+
+                        return resolve(publishResponse);
+
+                    } catch(err) {
+                        reject(err);
+                    }
+
+                } else {
+
+                    if(noOfPublishRetries >= (timeoutInSeconds * 2)) {
+                        return reject(new TopicPublishError(`Unable to publish the message to ${this._topicPath} - Queue Client not connected`))
+                    }
+
+                    noOfPublishRetries++;
+
+                    setTimeout(() => {
+                        _tryPublish();
+                    }, 500);
+                }
+            }
+
+            _tryPublish();
+        })
     }
 
-    public async subscribe(options?: IClientSubscribeOptions): Promise<ISubscribeResponse> {
+    public subscribe(options?: IClientSubscribeOptions): void {
 
-        if(!this.isConnected) {
-            throw new QueueClientConnectionError('QueueClient/Topic not connected');
+        this._isSubscribing = true;
+
+        const _emitSubscriptionResponse = (succeeded: boolean, failedReason?: string) => {
+            this.emit('onSubscriptionResponse', [succeeded, failedReason])
         }
 
-        const subscribeResponse = await this._subscriber({
-            topicPath: this._topicPath,
-            options
-        });
+        const _trySubscribe = async () => {
+            if(this.isConnected) {
+                try {
+                    clearTimeout(this._trySubscribeTimeout);
 
-        this._isSubscribed = subscribeResponse.subscribed;
+                    const subscribeResponse = await this._subscriber({
+                        topicPath: this._topicPath,
+                        options
+                    });
 
-        return subscribeResponse;
+                    this._isSubscribed = subscribeResponse.subscribed;
+                } catch(err) {
+                    this._subscriptionFailedReason = err.message;
+                    this._isSubscribed = false;
+                } finally {
+                    this._isSubscribing = false;
+                    _emitSubscriptionResponse(this._isSubscribed, this._subscriptionFailedReason);
+                }
+            } else {
+                this._trySubscribeTimeout = setTimeout(() => {
+                    _trySubscribe();
+                }, 200);
+            }
+        }
+
+        _trySubscribe();
     }
 
-    public async unsubscribe(): Promise<IUnsubscribeResponse> {
+    public unsubscribe(): void {
 
-        if(!this.isConnected) {
-            throw new QueueClientConnectionError('QueueClient/Topic not connected');
-        }
+        clearTimeout(this._trySubscribeTimeout);
 
-        if(this._unsubscriber) {
-            const unsubscribeResponse = await this._unsubscriber(this._topicPath);
-            this._isSubscribed = !unsubscribeResponse.unsubscribed;
-            return unsubscribeResponse;
+        if(!this.isSubscribed) {
+            this._isSubscribing = false;
+            this._subscriptionFailedReason = null;
         } else {
-            return {
-                unsubscribed: false
-            };
-        }
+            const _tryUnsubscribe = async () => {
+                if(this.isConnected) {
+                    try {
+                        clearTimeout(this._tryUnsubscribeTimeout);
 
+                        const unsubscribeResponse = await this._unsubscriber(this._topicPath);
+                        this._isSubscribed = !unsubscribeResponse.unsubscribed;
+
+                    } catch(err) {}
+                } else {
+                    this._tryUnsubscribeTimeout = setTimeout(() => {
+                        _tryUnsubscribe();
+                    }, 500)
+                }
+            }
+
+            _tryUnsubscribe();
+        }
     }
 
     public emitMessage(message: Buffer) {
-        if(this.isSubscribed) {
+        if(this.isSubscribed || this.isSubscribing) {
             this._noOfReceivedMessages++;
 
             const messageAsString = message.toString(this._encoding);
@@ -141,8 +206,20 @@ export class Topic extends EventEmitter {
         }
     }
 
+    public get isSubscribing(): boolean {
+        return this._isSubscribing;
+    }
+
     public get isSubscribed(): boolean {
         return this._isSubscribed;
+    }
+
+    public get subscriptionFailed(): boolean {
+        return !!this._subscriptionFailedReason;
+    }
+
+    public get subscriptionFailedReason(): string {
+        return this._subscriptionFailedReason;
     }
 
     public get isConnected(): boolean {
