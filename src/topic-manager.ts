@@ -31,6 +31,8 @@ export class TopicManager {
     private readonly _getUnsubscriber: () => (TopicUnsubscriber | null);
     private readonly _queueClient: QueueClient;
 
+    private _default_topics_registered = false;
+
     private _addDefaultTopicsTimeout: NodeJS.Timeout;
 
     constructor(options: ITopicManagerConstructor) {
@@ -41,33 +43,30 @@ export class TopicManager {
 
         if(options.topics && Object.keys(options.topics).length > 0) {
             this._addDefaultTopics(options.topics);
+        } else {
+            this._default_topics_registered = true;
         }
     }
 
     private async _addDefaultTopics(topics: DefaultTopics) {
+        const addTopics = async () => {
+            if(this.isConnected && !this._default_topics_registered) {
+                clearTimeout(this._addDefaultTopicsTimeout);
 
-        await Promise.all(
-            Object
-                .keys(topics)
-                .map(topicPath => this.addTopic(topicPath, topics[topicPath]))
-        )
+                await Promise.all(
+                    Object
+                        .keys(topics)
+                        .map(topicPath => this.addTopic(topicPath, topics[topicPath]))
+                );
 
-        // const addTopics = async () => {
-        //     if(this.isConnected) {
-        //         clearTimeout(this._addDefaultTopicsTimeout);
-        //
-        //         await Promise.all(
-        //             Object
-        //                 .keys(topics)
-        //                 .map(topicPath => this.addTopic(topicPath, topics[topicPath]))
-        //         )
-        //
-        //     } else {
-        //         this._addDefaultTopicsTimeout = setTimeout(() => addTopics(), 10)
-        //     }
-        // }
-        //
-        // addTopics();
+                this._default_topics_registered = true;
+
+            } else {
+                this._addDefaultTopicsTimeout = setTimeout(() => addTopics(), 10)
+            }
+        }
+
+        addTopics();
 
     }
 
