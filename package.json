@@ -1,6 +1,6 @@
 {
   "name": "@super-js/queue-clients",
-  "version": "0.0.4",
+  "version": "1.0.0",
   "description": "",
   "main": "lib/index.js",
   "repository": "https://github.com/super-js/queue-clients.git",
@@ -22,6 +22,6 @@
     "test": "yarn jest"
   },
   "dependencies": {
-    "mqtt": "^4.2.6"
+    "mqtt": "4.3.7"
   }
 }
